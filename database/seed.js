@@ -1,0 +1,217 @@
+// Run with: npm run seed
+// Populates MongoDB with demo Admin, HR, Employees, Tasks, Attendance, Leaves, Performance
+const dotenv = require('dotenv');
+const mongoose = require('mongoose');
+const connectDB = require('../config/db');
+
+const User = require('../models/User');
+const Employee = require('../models/Employee');
+const Task = require('../models/Task');
+const Attendance = require('../models/Attendance');
+const Leave = require('../models/Leave');
+const Performance = require('../models/Performance');
+const generateEmployeeId = require('../utils/generateEmployeeId');
+
+dotenv.config();
+
+const seed = async () => {
+  await connectDB();
+
+  console.log('Clearing existing data...');
+  await Promise.all([
+    User.deleteMany(),
+    Employee.deleteMany(),
+    Task.deleteMany(),
+    Attendance.deleteMany(),
+    Leave.deleteMany(),
+    Performance.deleteMany(),
+  ]);
+
+  const company = 'Orbit Tech';
+  const year = 2023;
+
+  const peopleData = [
+    { firstName: 'John', lastName: 'Admin', email: 'admin@dayflow.com', role: 'ADMIN', dept: 'Management', pos: 'Administrator' },
+    { firstName: 'Sara', lastName: 'Hurst', email: 'hr@dayflow.com', role: 'HR', dept: 'Human Resources', pos: 'HR Manager' },
+    { firstName: 'Jodo', lastName: 'Dorsey', email: 'jodo@dayflow.com', role: 'EMPLOYEE', dept: 'Engineering', pos: 'Frontend Developer' },
+    { firstName: 'Maya', lastName: 'Chen', email: 'maya@dayflow.com', role: 'EMPLOYEE', dept: 'Engineering', pos: 'Backend Developer' },
+    { firstName: 'Liam', lastName: 'Park', email: 'liam@dayflow.com', role: 'EMPLOYEE', dept: 'Design', pos: 'UI/UX Designer' },
+    { firstName: 'Priya', lastName: 'Nair', email: 'priya@dayflow.com', role: 'EMPLOYEE', dept: 'Marketing', pos: 'Marketing Executive' },
+  ];
+
+  const employees = [];
+  const credentialsList = [];
+
+  for (const p of peopleData) {
+    const employeeId = await generateEmployeeId(company, p.firstName, p.lastName, new Date(year, 0, 10));
+    const password = p.role === 'ADMIN' ? 'Admin@123' : p.role === 'HR' ? 'Hr@12345' : 'Employee@123';
+
+    const user = await User.create({
+      employeeId,
+      email: p.email,
+      password,
+      role: p.role,
+      isFirstLogin: false,
+      isActive: true,
+    });
+
+    const monthlyWage = p.role === 'EMPLOYEE' ? 50000 : 80000;
+    const basicSalary = monthlyWage * 0.5;
+    const hra = basicSalary * 0.5;
+
+    const employee = await Employee.create({
+      userId: user._id,
+      employeeId,
+      firstName: p.firstName,
+      lastName: p.lastName,
+      email: p.email,
+      phone: '9876543210',
+      company,
+      department: p.dept,
+      jobPosition: p.pos,
+      manager: p.role === 'EMPLOYEE' ? 'Sara Hurst' : '',
+      location: 'Bangalore, India',
+      dateOfBirth: new Date(1995, 4, 12),
+      joiningDate: new Date(year, 0, 10),
+      address: '123 MG Road, Bangalore',
+      nationality: 'Indian',
+      gender: 'Not specified',
+      maritalStatus: 'Single',
+      skills: ['Communication', 'Teamwork', 'Problem Solving'],
+      certifications: ['Certified Professional'],
+      about: `${p.firstName} is a dedicated member of the ${p.dept} team.`,
+      interests: ['Reading', 'Traveling'],
+      salary: {
+        wageType: 'Monthly',
+        monthlyWage,
+        yearlyWage: monthlyWage * 12,
+        basicSalary,
+        hra,
+        standardAllowance: monthlyWage * 0.1,
+        performanceBonus: monthlyWage * 0.1,
+        leaveTravelAllowance: monthlyWage * 0.05,
+        fixedAllowance: monthlyWage * 0.05,
+        providentFund: basicSalary * 0.12,
+        professionalTax: 200,
+        workingDays: 22,
+        breakTime: '1 hour',
+      },
+    });
+
+    employees.push({ employee, role: p.role });
+    credentialsList.push({ role: p.role, employeeId, email: p.email, password });
+  }
+
+  const empOnly = employees.filter((e) => e.role === 'EMPLOYEE').map((e) => e.employee);
+  const admin = employees.find((e) => e.role === 'ADMIN').employee;
+
+  console.log('Creating tasks...');
+  const taskTitles = [
+    { title: 'Build login page UI', priority: 'HIGH', status: 'COMPLETED', progress: 100 },
+    { title: 'Design dashboard mockups', priority: 'MEDIUM', status: 'IN_PROGRESS', progress: 60 },
+    { title: 'Set up MongoDB models', priority: 'HIGH', status: 'COMPLETED', progress: 100 },
+    { title: 'Write API documentation', priority: 'LOW', status: 'TODO', progress: 0 },
+    { title: 'Fix attendance bug', priority: 'URGENT', status: 'REVIEW', progress: 90 },
+    { title: 'Prepare marketing campaign', priority: 'MEDIUM', status: 'IN_PROGRESS', progress: 40 },
+  ];
+
+  for (let i = 0; i < taskTitles.length; i++) {
+    const t = taskTitles[i];
+    const assignedTo = empOnly[i % empOnly.length];
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + (i - 2) * 3);
+
+    await Task.create({
+      title: t.title,
+      description: `${t.title} - demo task generated by seed script.`,
+      assignedTo: assignedTo._id,
+      createdBy: admin._id,
+      priority: t.priority,
+      status: t.status,
+      startDate: new Date(),
+      dueDate,
+      completionDate: t.status === 'COMPLETED' ? new Date() : undefined,
+      progress: t.progress,
+    });
+  }
+
+  console.log('Creating attendance records...');
+  for (const emp of empOnly) {
+    for (let d = 6; d >= 0; d--) {
+      const date = new Date();
+      date.setDate(date.getDate() - d);
+      date.setHours(0, 0, 0, 0);
+
+      const checkIn = new Date(date);
+      checkIn.setHours(9, Math.floor(Math.random() * 30), 0);
+      const checkOut = new Date(date);
+      checkOut.setHours(18, Math.floor(Math.random() * 30), 0);
+
+      const workHours = Math.round(((checkOut - checkIn) / 3600000) * 100) / 100;
+
+      await Attendance.create({
+        employeeId: emp._id,
+        date,
+        checkIn,
+        checkOut,
+        workHours,
+        extraHours: workHours > 8 ? Math.round((workHours - 8) * 100) / 100 : 0,
+        status: checkIn.getHours() > 10 ? 'LATE' : 'PRESENT',
+      });
+    }
+  }
+
+  console.log('Creating leave requests...');
+  await Leave.create({
+    employeeId: empOnly[0]._id,
+    leaveType: 'PAID_TIME_OFF',
+    startDate: new Date(new Date().setDate(new Date().getDate() + 5)),
+    endDate: new Date(new Date().setDate(new Date().getDate() + 7)),
+    numberOfDays: 3,
+    reason: 'Family function',
+    status: 'PENDING',
+  });
+
+  await Leave.create({
+    employeeId: empOnly[1]._id,
+    leaveType: 'SICK_LEAVE',
+    startDate: new Date(new Date().setDate(new Date().getDate() - 3)),
+    endDate: new Date(new Date().setDate(new Date().getDate() - 2)),
+    numberOfDays: 2,
+    reason: 'Fever',
+    status: 'APPROVED',
+    approvedBy: admin._id,
+    approvedAt: new Date(),
+  });
+
+  console.log('Creating performance records...');
+  for (const emp of empOnly) {
+    await Performance.create({
+      employeeId: emp._id,
+      taskCompletionScore: 75,
+      attendanceScore: 90,
+      onTimeDeliveryScore: 80,
+      productivityScore: 70,
+      overallScore: 78,
+      strengths: ['Reliable', 'Good communicator'],
+      weaknesses: ['Occasionally misses deadlines'],
+      suggestions: ['Improve time management'],
+      managerFeedback: 'Keep up the good work!',
+      reviewPeriod: new Date().toISOString().slice(0, 7),
+    });
+  }
+
+  console.log('\n===== DEMO LOGIN CREDENTIALS =====');
+  credentialsList.forEach((c) => {
+    console.log(`${c.role.padEnd(8)} | ID: ${c.employeeId} | Email: ${c.email} | Password: ${c.password}`);
+  });
+  console.log('===================================\n');
+
+  console.log('Seed completed successfully.');
+  process.exit(0);
+};
+
+seed().catch((err) => {
+  console.error('Seed failed:', err);
+  process.exit(1);
+});
